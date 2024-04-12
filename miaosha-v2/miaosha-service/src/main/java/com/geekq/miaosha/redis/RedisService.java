@@ -229,6 +229,25 @@ public class RedisService {
         }
     }
 
+    /**
+     * 扣库存，扣除指定值，需要使用redis + lua，先判断是否足够，再扣库存：
+     * @param prefix
+     * @param key
+     * @param <T>
+     * @return
+     */
+    public <T> Long decrCount(KeyPrefix prefix, String key) {
+        Jedis jedis = null;
+        try {
+            jedis = jedisPool.getResource();
+            //生成真正的key
+            String realKey = prefix.getPrefix() + key;
+            return jedis.decr(realKey);
+        } finally {
+            returnToPool(jedis);
+        }
+    }
+
     public Long del(String key) {
         Jedis jedis = null;
         Long result = null;

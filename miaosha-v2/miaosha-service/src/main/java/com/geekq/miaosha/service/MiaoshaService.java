@@ -3,14 +3,17 @@ package com.geekq.miaosha.service;
 import com.alibaba.dubbo.config.annotation.Reference;
 import com.geekq.api.entity.GoodsVoOrder;
 import com.geekq.miaosha.redis.MiaoshaKey;
+import com.geekq.miaosha.redis.OrderKey;
 import com.geekq.miaosha.redis.RedisService;
 import com.geekq.miasha.entity.MiaoshaOrder;
 import com.geekq.miasha.entity.MiaoshaUser;
 import com.geekq.miasha.entity.OrderInfo;
 import com.geekq.miasha.utils.MD5Utils;
 import com.geekq.miasha.utils.UUIDUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.script.ScriptEngine;
@@ -45,27 +48,48 @@ public class MiaoshaService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
     public OrderInfo miaosha(MiaoshaUser user, GoodsVoOrder goods) {
         //减库存 下订单 写入秒杀订单
 //		boolean success = goodsService.reduceStock(goods);
+        // TODO 扣库存加锁，使用乐观锁，版本号控制 + 订单记录表根据user和商品限制唯一约束
+        // TODO 直接将商品库存和数据库的实际库存对比，作为版本控制
         boolean success = goodsServiceRpc.reduceStock(goods);
         if (success) {
             return orderService.createOrder(user, goods);
         } else {
-            //如果库存不存在则内存标记为true
-            setGoodsOver(goods.getId());
+            // 如果库存不存在则内存标记为true
+            // TODO 刷新redis缓存数量，或者直接删除
+            setGoodsOver(goods.getId());  // 无需要保存标记
+            miaoshaOrderFail(user, goods.getId());
             return null;
         }
+        // 更新redis
+    }
+
+    /**
+     * 直接写入redis,判断抢购失败,直接返回，不执行后面的逻辑
+     * @param user
+     * @param goodsId
+     */
+    public void miaoshaOrderFail(MiaoshaUser user, Long goodsId) {
+        // 创建空的订单，表示下单失败
+        MiaoshaOrder miaoshaOrder = new MiaoshaOrder();
+        redisService.set(OrderKey.getMiaoshaOrderByUidGid, "" + user.getNickname() + "_" + goodsId, miaoshaOrder);
     }
 
     public long getMiaoshaResult(Long userId, long goodsId) {
         MiaoshaOrder order = orderService.getMiaoshaOrderByUserIdGoodsId(userId, goodsId);
         if (order != null) {//秒杀成功
+            // TODO 下单失败：订单信息不完整
+            if (null == order.getOrderId() || null == order.getUserId() || null == order.getGoodsId()) {
+                return -1;
+            }
             return order.getOrderId();
         } else {
             boolean isOver = getGoodsOver(goodsId);
             if (isOver) {
+                // 秒杀结束
                 return -1;
             } else {
                 return 0;

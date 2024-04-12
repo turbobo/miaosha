@@ -11,6 +11,7 @@ import com.geekq.miasha.utils.DateTimeUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
@@ -36,7 +37,7 @@ public class OrderService {
         return orderMapper.getOrderById(orderId);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
     public OrderInfo createOrder(MiaoshaUser user, GoodsVoOrder goods) {
         OrderInfo orderInfo = new OrderInfo();
         orderInfo.setCreateDate(new Date());
@@ -54,8 +55,18 @@ public class OrderService {
         miaoshaOrder.setOrderId(orderInfo.getId());
         miaoshaOrder.setUserId(Long.valueOf(user.getNickname()));
         orderMapper.insertMiaoshaOrder(miaoshaOrder);
+
+        // redis标记 用户+商品 订单存在
         redisService.set(OrderKey.getMiaoshaOrderByUidGid, "" + user.getNickname() + "_" + goods.getId(), miaoshaOrder);
+        // TODO 删除redis 库存的缓存，需要从数据库中更新
+
+        // TODO 创建访客业务订单逻辑
+        createVisitorOrder();
         return orderInfo;
+    }
+    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
+    public void createVisitorOrder () {
+
     }
 
     public void closeOrder(int hour) {

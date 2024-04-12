@@ -77,7 +77,7 @@ public class MiaoshaController implements InitializingBean {
             result.withError(SESSION_ERROR.getCode(), SESSION_ERROR.getMessage());
             return result;
         }
-        //验证path
+        // 验证path TODO 改进为原子操作 lua
         boolean check = miaoshaService.checkPath(user, goodsId, path);
         if (!check) {
             result.withError(REQUEST_ILLEGAL.getCode(), REQUEST_ILLEGAL.getMessage());
@@ -97,6 +97,8 @@ public class MiaoshaController implements InitializingBean {
          */
         try {
             RedisLimitRateWithLUA.accquire();
+            RedisLimitRateWithLUA.accquireUser(user);
+            // TODO 简单点：直接对单个用户限流，一分钟内多少次抢购，或者总抢购次数
         } catch (IOException e) {
             result.withError(EXCEPTION.getCode(), REPEATE_MIAOSHA.getMessage());
             return result;
@@ -111,23 +113,31 @@ public class MiaoshaController implements InitializingBean {
             result.withError(EXCEPTION.getCode(), REPEATE_MIAOSHA.getMessage());
             return result;
         }
-        //内存标记，减少redis访问
+        // 内存标记，减少redis访问
+        // TODO  多实例，本地内存可能不准确，但是后面redis会执行判断，将结果再写入本地内存！！！！！！！！！！！！！！
         boolean over = localOverMap.get(goodsId);
         if (over) {
             result.withError(EXCEPTION.getCode(), MIAO_SHA_OVER.getMessage());
             return result;
         }
-        //预见库存
+        // 预减库存
         Long stock = redisService.decr(GoodsKey.getMiaoshaGoodsStock, "" + goodsId);
-        if (stock < 0) {
+        if (stock < 0) {  // 判断是否足够  库存是否满足当前购票数
             localOverMap.put(goodsId, true);
             result.withError(EXCEPTION.getCode(), MIAO_SHA_OVER.getMessage());
-            return result;
+            return result; // TODO 预减库存直接失败，则返回抢购失败
         }
+        // TODO 代码中提前创建好mq
         MiaoshaMessage mm = new MiaoshaMessage();
         mm.setGoodsId(goodsId);
         mm.setUser(user);
         mqSender.sendMiaoshaMessage(mm);
+        // TODO 此接口直接返回正在抢购中，订单异步生成了，页面返回抢购成功
+        // 前端页面等待中，通过方法查询接口，是否下单成功来获取抢购结果
+
+        // TODO 如果订单生成较慢，用户一直等待？
+        // TODO 订单异步生成，中间逻辑失败了，用户如何知道秒杀失败
+
         return result;
     }
 
@@ -148,6 +158,7 @@ public class MiaoshaController implements InitializingBean {
             return result;
         }
         model.addAttribute("user", user);
+        // TODO key存在，但是没有订单信息，只有失败，则直接返回失败
         Long miaoshaResult = miaoshaService.getMiaoshaResult(Long.valueOf(user.getNickname()), goodsId);
         result.setData(miaoshaResult);
         return result;

@@ -40,31 +40,50 @@ public class MQReceiver {
 //		@Autowired
 //        MiaoShaMessageService messageService ;
 
+    // TODO 任一步骤失败，直接将失败订单写入redis 不写入数据库，这样用户查询即可获取失败结果
+    // TODO mq处理扣库存和下订单的整个流程，只要有不满足或者错误，直接写空order存入redis，前端查询直接返回失败
     @RabbitListener(queues = MQConfig.MIAOSHA_QUEUE)
     public void receive(String message) {
         log.info("receive message:" + message);
-        MiaoshaMessage mm = RedisService.stringToBean(message, MiaoshaMessage.class);
-        MiaoshaUser user = mm.getUser();
-        long goodsId = mm.getGoodsId();
+        MiaoshaUser user = null;
+        Long goodsId = null;
+        try {
+            MiaoshaMessage mm = RedisService.stringToBean(message, MiaoshaMessage.class);
+            user = mm.getUser();
+            goodsId = mm.getGoodsId();
 
 //			GoodsVo goods = goodsService.getGoodsVoByGoodsId(goodsId);
-        ResultGeekQOrder<GoodsVoOrder> goodsVoOrderResultGeekQOrder = goodsServiceRpc.getGoodsVoByGoodsId(goodsId);
-        if (!AbstractResultOrder.isSuccess(goodsVoOrderResultGeekQOrder)) {
-            throw new GlobleException(ResultStatus.SESSION_ERROR);
+            ResultGeekQOrder<GoodsVoOrder> goodsVoOrderResultGeekQOrder = goodsServiceRpc.getGoodsVoByGoodsId(goodsId);
+            if (!AbstractResultOrder.isSuccess(goodsVoOrderResultGeekQOrder)) {
+                // TODO 直接写入redis,判断抢购失败,直接返回，不执行后面的逻辑
+//                miaoshaService.miaoshaOrderFail(user, goodsId);
+                throw new GlobleException(ResultStatus.SESSION_ERROR);
+            }
+
+            GoodsVoOrder goods = goodsVoOrderResultGeekQOrder.getData();
+            int stock = goods.getStockCount();
+            if (stock <= 0) {
+                // TODO 商品不足，写入本地缓存，删除redis（重新从数据库查）
+//                miaoshaService.miaoshaOrderFail(user, goodsId);
+//                return;
+
+                throw new GlobleException(ResultStatus.SESSION_ERROR);
+            }
+            //判断是否已经秒杀到了
+            MiaoshaOrder order = orderService.getMiaoshaOrderByUserIdGoodsId(Long.valueOf(user.getNickname()), goodsId);
+            if (order != null) {
+                // TODO 秒杀失败，订单已存在
+                miaoshaService.miaoshaOrderFail(user, goodsId);
+                return;
+            }
+            // 减库存 下订单 写入秒杀订单
+            // TODO 下述所有操作都不捕获异常，用一个事务捕获 遇到任何异常就回滚，
+            miaoshaService.miaosha(user, goods);
+        } catch (Exception e) {
+            // TODO 遇到异常，直接 设置空order放入redis，页面获取直接为 抢购失败
+            miaoshaService.miaoshaOrderFail(user, goodsId);
         }
 
-        GoodsVoOrder goods = goodsVoOrderResultGeekQOrder.getData();
-        int stock = goods.getStockCount();
-        if (stock <= 0) {
-            return;
-        }
-        //判断是否已经秒杀到了
-        MiaoshaOrder order = orderService.getMiaoshaOrderByUserIdGoodsId(Long.valueOf(user.getNickname()), goodsId);
-        if (order != null) {
-            return;
-        }
-        //减库存 下订单 写入秒杀订单
-        miaoshaService.miaosha(user, goods);
     }
 
 
