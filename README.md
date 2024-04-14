@@ -1,3 +1,6 @@
+## 从qiurunze123的秒杀项目fork，加上自己的注释
+
+
 ![互联网 Java 秒杀系统设计与架构](https://raw.githubusercontent.com/qiurunze123/imageall/master/miaoshashejitu.png)
 
 > 朋友们，感谢大家对我文章的支持。时间过得很快，
@@ -32,5 +35,5 @@
 
 
 
-**从qiurunze123的秒杀项目fork，加上自己的注释**
+
 
