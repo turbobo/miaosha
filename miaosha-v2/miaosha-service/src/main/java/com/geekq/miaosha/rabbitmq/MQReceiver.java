@@ -55,7 +55,7 @@ public class MQReceiver {
 //			GoodsVo goods = goodsService.getGoodsVoByGoodsId(goodsId);
             ResultGeekQOrder<GoodsVoOrder> goodsVoOrderResultGeekQOrder = goodsServiceRpc.getGoodsVoByGoodsId(goodsId);
             if (!AbstractResultOrder.isSuccess(goodsVoOrderResultGeekQOrder)) {
-                // TODO 直接写入redis,判断抢购失败,直接返回，不执行后面的逻辑
+                // 直接写入redis,判断抢购失败,直接返回，不执行后面的逻辑
 //                miaoshaService.miaoshaOrderFail(user, goodsId);
                 throw new GlobleException(ResultStatus.SESSION_ERROR);
             }
@@ -63,21 +63,22 @@ public class MQReceiver {
             GoodsVoOrder goods = goodsVoOrderResultGeekQOrder.getData();
             int stock = goods.getStockCount();
             if (stock <= 0) {
-                // TODO 商品不足，写入本地缓存，删除redis（重新从数据库查）
+                // 商品不足，写入本地缓存，删除redis（重新从数据库查）
 //                miaoshaService.miaoshaOrderFail(user, goodsId);
 //                return;
 
-                throw new GlobleException(ResultStatus.SESSION_ERROR);
+                // 库存不够，“商品已经秒杀完毕”
+                throw new GlobleException(ResultStatus.MIAO_SHA_OVER);
             }
             //判断是否已经秒杀到了
             MiaoshaOrder order = orderService.getMiaoshaOrderByUserIdGoodsId(Long.valueOf(user.getNickname()), goodsId);
             if (order != null) {
-                // TODO 秒杀失败，订单已存在
-                miaoshaService.miaoshaOrderFail(user, goodsId);
-                return;
+                // 秒杀失败，订单已存在
+//                miaoshaService.miaoshaOrderFail(user, goodsId);
+                throw new GlobleException(ResultStatus.REPEATE_MIAOSHA);
             }
             // 减库存 下订单 写入秒杀订单
-            // TODO 下述所有操作都不捕获异常，用一个事务捕获 遇到任何异常就回滚，
+            // TODO 下述方法的所有操作都不捕获异常，用一个事务捕获 遇到任何异常就回滚，
             miaoshaService.miaosha(user, goods);
         } catch (Exception e) {
             // TODO 遇到异常，直接 设置空order放入redis，页面获取直接为 抢购失败
