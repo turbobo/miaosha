@@ -9,6 +9,8 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.ScanParams;
 import redis.clients.jedis.ScanResult;
 
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -227,6 +229,30 @@ public class RedisService {
         } finally {
             returnToPool(jedis);
         }
+    }
+
+    // redis扣除指定库存数量
+    public boolean decrCount(String goodsId, Long buyConut) throws IOException, URISyntaxException {
+        Jedis jedis = jedisPool.getResource();
+
+        String lua =
+                "local key = KEYS[1] " +
+                        " local buyCount = tonumber(ARGV[1]) " +  // 需要购买的数量
+                        " local stock = tonumber(redis.call('get', key) or '0')" +   // redis中的 商品库存数量
+                        " if stock > buyCount " +  // 库存满足购买量，则继续
+                        " then  return 0 " +
+                        " else " +
+                        " redis.call('DECRBY', key, ARGV[1])" +  // 扣除库存
+                        " end return 1 ";
+
+        List<String> keys = new ArrayList<String>();
+        keys.add(goodsId);
+        List<String> args = new ArrayList<String>();
+        args.add(String.valueOf(buyConut));
+        jedis.auth("youxin11");
+        String luaScript = jedis.scriptLoad(lua);
+        Long result = (Long) jedis.evalsha(luaScript, keys, args);
+        return result == 1;
     }
 
     /**
