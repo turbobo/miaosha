@@ -65,12 +65,15 @@ public class MiaoshaController implements InitializingBean {
      * QPS:1306
      * 5000 * 10
      * get　post get 幂等　从服务端获取数据　不会产生影响　　post 对服务端产生变化
+     *
+     * 流程
+     * 口库存，之后下单，下单成功后，再去删除redis的余票缓存，防止回滚
      */
     @RequireLogin(seconds = 5, maxCount = 5, needLogin = true)
     @RequestMapping(value = "/{path}/do_miaosha", method = RequestMethod.POST)
     @ResponseBody
     public ResultGeekQ<Integer> miaosha(Model model, MiaoshaUser user, @PathVariable("path") String path,
-                                        @RequestParam("goodsId") long goodsId) {
+                                        @RequestParam("goodsId") long goodsId, Long buyCount) {
         ResultGeekQ<Integer> result = ResultGeekQ.build();
 
         if (user == null) {
@@ -96,7 +99,7 @@ public class MiaoshaController implements InitializingBean {
          * 分布式限流
          */
         try {
-            RedisLimitRateWithLUA.accquire();
+//            RedisLimitRateWithLUA.accquire();
             RedisLimitRateWithLUA.accquireUser(user);
             // TODO 简单点：直接对单个用户限流，一分钟内多少次抢购，或者总抢购次数
         } catch (IOException e) {
@@ -120,9 +123,17 @@ public class MiaoshaController implements InitializingBean {
             result.withError(EXCEPTION.getCode(), MIAO_SHA_OVER.getMessage());
             return result;
         }
-        // 预减库存
-        Long stock = redisService.decr(GoodsKey.getMiaoshaGoodsStock, "" + goodsId);
-        if (stock < 0) {  // 判断是否足够  库存是否满足当前购票数
+        // TODO reids操作：只更新redis自己的值，预减库存，只是作为临时库存，后面 数据库扣库存成功，会删除缓存从数据库查询最新值
+        boolean stock = false;
+        try {
+            stock = redisService.decrCount(GoodsKey.getMiaoshaGoodsStock.getPrefix() + goodsId, buyCount);
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
+        }
+//        Long stock = redisService.decr(GoodsKey.getMiaoshaGoodsStock, "" + goodsId);
+        if (!stock) {  // 判断是否足够  库存是否满足当前购票数
             localOverMap.put(goodsId, true);
             result.withError(EXCEPTION.getCode(), MIAO_SHA_OVER.getMessage());
             return result; // TODO 预减库存直接失败，则返回抢购失败
@@ -132,13 +143,12 @@ public class MiaoshaController implements InitializingBean {
         mm.setGoodsId(goodsId);
         mm.setUser(user);
         mqSender.sendMiaoshaMessage(mm);
+        return result;
         // TODO 此接口直接返回正在抢购中，订单异步生成了，页面返回抢购成功
         // 前端页面等待中，通过方法查询接口，是否下单成功来获取抢购结果
 
         // TODO 如果订单生成较慢，用户一直等待？
         // TODO 订单异步生成，中间逻辑失败了，用户如何知道秒杀失败
-
-        return result;
     }
 
 

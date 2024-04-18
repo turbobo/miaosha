@@ -2,6 +2,7 @@ package com.geekq.miaosha.service;
 
 import com.geekq.api.entity.GoodsVoOrder;
 import com.geekq.miaosha.mapper.OrderMapper;
+import com.geekq.miaosha.redis.GoodsKey;
 import com.geekq.miaosha.redis.OrderKey;
 import com.geekq.miaosha.redis.RedisService;
 import com.geekq.miasha.entity.MiaoshaOrder;
@@ -58,10 +59,13 @@ public class OrderService {
 
         // redis标记 用户+商品 订单存在
         redisService.set(OrderKey.getMiaoshaOrderByUidGid, "" + user.getNickname() + "_" + goods.getId(), miaoshaOrder);
-        // TODO 删除redis 库存的缓存，需要从数据库中更新
+
 
         // TODO 创建访客业务订单逻辑
         createVisitorOrder();
+
+        // TODO reids操作：删除redis 库存的缓存，需要从数据库中更新余票的最新值
+        redisService.del(GoodsKey.getMiaoshaGoodsStock.getPrefix() + Long.valueOf(goods.getId()));
         return orderInfo;
     }
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)

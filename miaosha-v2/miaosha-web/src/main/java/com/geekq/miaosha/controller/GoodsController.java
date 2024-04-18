@@ -129,7 +129,7 @@ public class GoodsController extends BaseController {
 
     /**
      * 数据库很少使用long的　，　id 正常使一般使用　snowflake 分布式自增id
-     *
+     * TODO 读余票，接口首先从缓存读，缓存没有读数据库，并同时更新到缓存中，设置有效期10分钟
      * @param model
      * @param user
      * @param goodsId

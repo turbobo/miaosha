@@ -81,6 +81,7 @@ public class MQReceiver {
             // TODO 下述方法的所有操作都不捕获异常，用一个事务捕获 遇到任何异常就回滚，
             miaoshaService.miaosha(user, goods);
         } catch (Exception e) {
+            log.error("下单异常");
             // TODO 遇到异常，直接 设置空order放入redis，页面获取直接为 抢购失败
             miaoshaService.miaoshaOrderFail(user, goodsId);
         }
