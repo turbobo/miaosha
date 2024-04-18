@@ -48,6 +48,18 @@ public class MiaoshaService {
         }
     }
 
+    /**
+     * spring默认捕获运行时异常及其子类RuntimeException
+     * 如果要捕获其他异常，需要手动声明rollback
+     *
+     * 事务捕获有两种方式：
+     * 1、整个代码块不做任何try-catch，方法上也不声明 throws XXXException，异常都交给事务捕获
+     * 2、方法内代码块正常使用try-catch，但是在catch中需要手动throw new XXXException，让事务捕获，
+     * 好处是，发生异常的时候可以在catch中记录日志
+     * @param user
+     * @param goods
+     * @return
+     */
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
     public OrderInfo miaosha(MiaoshaUser user, GoodsVoOrder goods) {
         //减库存 下订单 写入秒杀订单
@@ -87,6 +99,7 @@ public class MiaoshaService {
             }
             return order.getOrderId();
         } else {
+            // 直接从redis获取余票数量
             boolean isOver = getGoodsOver(goodsId);
             if (isOver) {
                 // 秒杀结束
